@@ -1,0 +1,50 @@
+name: Code Review
+on:
+  push:
+  pull_request:
+  types: [opened]
+jobs:
+  code-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Detect Repository Language
+        uses: actions/github-script@v3
+        with:
+          script: |
+            const repo = await github.repos.get({ owner: context.repo.owner, repo: context.repo.repo });
+            console.log(repo.data.language);
+        id: detect-language
+
+      - name: Set up Node.js
+        if: steps.detect-language.outputs.result == 'JavaScript'
+        uses: actions/setup-node@v2
+        with:
+          node-version: '14.x'
+
+      - name: Set up Golang
+        if: steps.detect-language.outputs.result == 'Go'
+        uses: golangci/golangci-lint-action@v2
+        with:
+          version: 'latest'
+
+      - name: Run Code Review
+        if: steps.detect-language.outputs.result != null
+        run: |
+          if [ "${{ steps.detect-language.outputs.result }}" == "JavaScript" ]; then
+            ./creepy-node.sh > code_review_results.txt
+          elif [ "${{ steps.detect-language.outputs.result }}" == "Go" ]; then
+            ./creepy-go.sh > code_review_results.txt
+          fi
+
+      - name: Post Code Review Results as Comment
+        if: steps.detect-language.outputs.result != null
+        uses: actions/github-script@v3
+        with:
+          script: |
+            const body = '```\n' + fs.readFileSync('code_review_results.txt', 'utf-8') + '\n```';
+            await github.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body
+            });
